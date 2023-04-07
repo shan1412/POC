@@ -22,7 +22,7 @@ from wtforms import StringField
 from wtforms.validators import DataRequired
 from flask_migrate import Migrate
 from flask_login import LoginManager
-from POC import db,login_manager
+from models import db,login_manager
 from werkzeung.security import generate_password_hash,check_password_hash
 from flask_login import UserMixin
 

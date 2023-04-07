@@ -26,8 +26,6 @@ from flask_login import LoginManager
 from flask_login import login_user,login_required,logout_user
 from models import user
 from forms import LoginForm,RegistrationForm
-from werkzeug.security import generate_password_hash,check_password_hash
-
 
 attendanceUPLOAD_FOLDER = r"E:\uploads\Attendence_sheet\\"
 
@@ -55,7 +53,8 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 
-@app.route('/')
+@app.route('/home')
+@login_required
 def home():
     return render_template('imagebutton.html')
     
