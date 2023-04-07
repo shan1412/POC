@@ -5,7 +5,7 @@ import openpyxl
 import psycopg2
 import datetime
 from datetime import date
-from flask import Flask, request, redirect, url_for,flash
+from flask import Flask, request, redirect, url_for,flash,abort
 from flask import render_template
 from config import get_db_connection
 from flask import make_response
@@ -21,6 +21,13 @@ from config import pg_engine
 from flask_wtf import FlaskForm
 from wtforms import StringField
 from wtforms.validators import DataRequired
+from flask_migrate import Migrate
+from flask_login import LoginManager
+from flask_login import login_user,login_required,logout_user
+from models import user
+from forms import LoginForm,RegistrationForm
+from werkzeug.security import generate_password_hash,check_password_hash
+
 
 attendanceUPLOAD_FOLDER = r"E:\uploads\Attendence_sheet\\"
 
@@ -43,6 +50,11 @@ app.config['attendanceUPLOAD_FOLDER'] = attendanceUPLOAD_FOLDER
 app.config['marksUPLOAD_FOLDER'] = marksUPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1000 * 1000
 
+Migrate(app,db)
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+
 @app.route('/')
 def home():
     return render_template('imagebutton.html')
@@ -64,6 +76,7 @@ def studentinfo():
     conn.close()
     df=pd.DataFrame(data=tables,columns=col_name)
     return render_template('simple.html',  tables=[df.to_html(classes='data')], titles=df.columns.values)
+
 
 #Student Marks page
 @app.route('/marksnavigator',methods=("POST", "GET"))
@@ -196,7 +209,8 @@ def attendence_report():
   cur.execute(f'''SELECT * FROM attendence WHERE Current_Class={cl};''')
   db_tables=cur.fetchall()
   tables =[table for table in db_tables]
-  cur.execute('''SELECT * FROM information_schema.columns WHERE table_schema = 'public'AND table_name   = 'attendence';''')
+  cur.execute('''SELECT * FROM information_schema.columns WHERE table_schema = 'public'
+              AND table_name   = 'attendence';''')
   col_name=[col[3] for col in cur.fetchall()]
   cur.close()
   conn.close()
@@ -260,229 +274,6 @@ def attendance_data():
     df.to_sql('attendence',con=lc_pg_eng,if_exists='append',index=False)
     return redirect("/attentence_info")
   
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-@app.route('/upload', methods=['GET', 'POST'])
-def upload_file():
-    if request.method == 'POST':
-        # check if the post request has the file part
-        if 'file' not in request.files:
-            flash('No file part')
-            return redirect(request.url)
-        file = request.files['file']
-        # If the user does not select a file, the browser submits an
-        # empty file without a filename.
-        if file.filename == '':
-            flash('No selected file')
-            return redirect(request.url)
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            return "Sucessfully uploaded"
-            # return redirect(url_for('download_file', name=filename))
-    return '''
-    <!DOCTYPE html>
-<html>
-  <head>
-    <title>Upload</title>
-    <style>
-      /* Define the style for the header section */
-      header {
-        background-color: #333;
-        color: #fff;
-        padding: 20px;
-        text-align: center;
-      }
-
-      /* Define the style for the buttons */
-      .btn {
-        background-color: #4CAF50;
-        border: none;
-        color: white;
-        padding: 12px 16px;
-        text-align: center;
-        text-decoration: none;
-        display: inline-block;
-        font-size: 16px;
-        margin: 4px 2px;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <header>
-    <a href="/"><button>Home</button></a>
-    <title>Upload new File</title>
-    <h1>Upload new File</h1>
-    <form method=post enctype=multipart/form-data>
-      <input type=file name=file>
-      <input type=submit value=Upload>
-    </form>
-  </body>
-</html>'''
-#render_template('upload_file.html')
-@app.route('/download/<name>')
-def download_file(name):
-    return send_from_directory(app.config["UPLOAD_FOLDER"], name)
-# @app.route('/db_tables_list')
-# def db_tables_list():
-#     conn = get_db_connection()
-#     #get table names from DB
-#     cur = conn.cursor()
-#     cur.execute('''SELECT table_name 
-#     FROM information_schema.tables 
-#     WHERE table_schema = 'public';''')
-#     db_tables=cur.fetchall()
-#     table_name =[table[0] for table in db_tables]
-#     cur.close()
-#     conn.close()
-#     return redirect(url_for('db_tables', table_name=table_name))
-
-# @app.route('/select_table')
-# def select_table():
-    
-#     conn = get_db_connection()
-#     cur = conn.cursor()
-#     # get selected table from form data
-#     table_name = request.form['table_name']
-#     # get rows from selected table
-#     cur.execute(f"SELECT * FROM {table_name}")
-#     rows = cur.fetchall()
-#     # get column names from selected table
-#     cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name='{table_name}'")
-#     columns = [col[3] for col in cur.fetchall()]
-#     cur.close()
-#     conn.close()
-#     return pd.DataFrame(data=rows,columns=columns).to_html()
-
-# class new_table(db.Model):
-#     empid = db.Column(db.Integer, primary_key=True)
-#     user_name = db.Column(db.String(50), unique=True, nullable=False)
-#     passwd = db.Column(db.String(50), nullable = False)
-#     first_name=db.Column(db.String(20),nullable = False)
-#     last_name=db.Column(db.String(20),nullable = True)
-#     role_id=db.Column(db.Integer,nullable = False)
-#     reporting_manager=db.Column(db.String(50),nullable = False)
-#     active_status=db.Column(db.String(10),nullable = False)
-#     experience=db.Column(db.Integer(),nullable=True)
-#     def __init__(self, empid, user_name,passwd,first_name,last_name,role_id,reporting_manager,active_status,experience):
-#         self.empid = empid
-#         self.user_name = user_name
-#         self.passwd = passwd
-#         self.first_name = first_name
-#         self.last_name = last_name
-#         self.role_id = role_id
-#         self.reporting_manager = reporting_manager
-#         self.active_status=active_status
-#         self.experience=experience
-        
-# @app.route("/addperson")
-# def addperson():
-#     return render_template("addperson.html")
-
-# @app.route("/personadd", methods=['POST'])
-# def personadd():
-#     empid = request.form["empid"]
-#     user_name = request.form["user_name"]
-#     passwd = request.form["passwd"]
-#     first_name = request.form["first_name"]   
-#     last_name=request.form["last_name"]
-#     role_id=request.form["role_id"]
-#     reporting_manager=request.form["reporting_manager"]
-#     active_status=request.form["active_status"]
-#     experience=request.form["experience"]
-#     entry = new_table(empid, user_name,passwd,first_name,last_name,role_id,reporting_manager,active_status,experience)
-#     db.session.add(entry)
-#     db.session.commit()
-#     return redirect('/table/')
-
-# @app.route('/table_info')
-# def tab_info():
-#     # get selected table from form data
-#     table_name = request.form['table_name']
-#     conn = get_db_connection()
-#     #get table names from DB
-#     cur = conn.cursor()
-#     cur.execute('''select column_name, data_type, character_maximum_length, column_default, is_nullable
-#                     from INFORMATION_SCHEMA.COLUMNS where table_name = '{}';'''.format(table_name))
-#     db_tables_info=cur.fetchall()
-#     cur.close()
-#     conn.close()
-#     return {"info":db_tables_info}
-
-
-
-
-# def allowed_file(filename):
-#     return '.' in filename and \
-#            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-# @app.route('/upload', methods=['GET', 'POST'])
-# def upload_file():
-#     if request.method == 'POST':
-#         # check if the post request has the file part
-#         if 'file' not in request.files:
-#             flash('No file part')
-#             return redirect(request.url)
-#         file = request.files['file']
-#         # If the user does not select a file, the browser submits an
-#         # empty file without a filename.
-#         if file.filename == '':
-#             flash('No selected file')
-#             return redirect(request.url)
-#         if file and allowed_file(file.filename):
-#             filename = secure_filename(file.filename)
-#             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-#             return "Sucessfully uploaded"
-#             # return redirect(url_for('download_file', name=filename))
-#     return '''
-#     <!DOCTYPE html>
-# <html>
-#   <head>
-#     <title>Assingments upload page</title>
-#     <style>
-#       /* Define the style for the header section */
-#       header {
-#         background-color: #333;
-#         color: #fff;
-#         padding: 20px;
-#         text-align: center;
-#       }
-
-#       /* Define the style for the buttons */
-#       .btn {
-#         background-color: #4CAF50;
-#         border: none;
-#         color: white;
-#         padding: 12px 16px;
-#         text-align: center;
-#         text-decoration: none;
-#         display: inline-block;
-#         font-size: 16px;
-#         margin: 4px 2px;
-#         cursor: pointer;
-#       }
-#     </style>
-#   </head>
-#   <body>
-#     <header>
-#     <a href="/"><button>Home</button></a>
-#     <title>Upload new File</title>
-#     <h1>Upload new File</h1>
-#     <form method=post enctype=multipart/form-data>
-#       <input type=file name=file>
-#       <input type=submit value=Upload>
-#     </form>
-#   </body>
-# </html>'''
-# #render_template('upload_file.html')
-
-# @app.route('/download/<name>')
-# def download_file(name):
-#     return send_from_directory(app.config["UPLOAD_FOLDER"], name)
-
-
-
 if __name__ == '__main__':
     db.create_all()
     # app.run(debug=True)
