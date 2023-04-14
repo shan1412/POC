@@ -1,28 +1,4 @@
-import os
-import pandas as pd
-import numpy as np
-import openpyxl
-import psycopg2
-import datetime
-from datetime import date
-from flask import Flask, request, redirect, url_for,flash
-from flask import render_template
-from config import get_db_connection
-from flask import make_response
-from flask import abort
-from flask import Flask
-from flask import Flask
-from flask_caching import Cache
-from werkzeug.utils import secure_filename
-from flask import send_from_directory
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import create_engine
-from flask_wtf import FlaskForm
-from wtforms import StringField
-from wtforms.validators import DataRequired
-from flask_migrate import Migrate
-from flask_login import LoginManager
-from models import db,login_manager
+from app import db,login_manager
 from werkzeung.security import generate_password_hash,check_password_hash
 from flask_login import UserMixin
 

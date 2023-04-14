@@ -22,10 +22,10 @@ from flask_wtf import FlaskForm
 from wtforms import StringField
 from wtforms.validators import DataRequired
 from flask_migrate import Migrate
-from flask_login import LoginManager
-from flask_login import login_user,login_required,logout_user
-from models import user
-from forms import LoginForm,RegistrationForm
+# from flask_login import LoginManager
+# from flask_login import login_user,login_required,logout_user
+# from models import user
+# from forms import LoginForm,RegistrationForm
 
 attendanceUPLOAD_FOLDER = r"E:\uploads\Attendence_sheet\\"
 
@@ -42,19 +42,22 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://{user}:{psw}@localhost/{db}".format(user='postgres',psw='Otsi1234',db='school')
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = True
 app.secret_key = 'fneapgfvnoowenvfbijnwgvopbi9wo'
-db = SQLAlchemy(app)
+db=SQLAlchemy(app)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['attendanceUPLOAD_FOLDER'] = attendanceUPLOAD_FOLDER
 app.config['marksUPLOAD_FOLDER'] = marksUPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1000 * 1000
 
-Migrate(app,db)
-login_manager.init_app(app)
-login_manager.login_view = 'login'
+
+# db.init_app(app)
+# Migrate(app,db)
+
+# login_manager.init_app(app)
+# login_manager.login_view = 'login'
 
 
 @app.route('/home')
-@login_required
+# @login_required
 def home():
     return render_template('imagebutton.html')
     
@@ -274,6 +277,6 @@ def attendance_data():
     return redirect("/attentence_info")
   
 if __name__ == '__main__':
-    db.create_all()
+    # db.create_all()
     # app.run(debug=True)
-    app.run(debug=True,host='10.80.1.72',port=2545)
+    app.run(debug=True,host='10.80.2.46',port=2545)
