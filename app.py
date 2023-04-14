@@ -1,13 +1,20 @@
 import os
 import pandas as pd
 import numpy as np
+import random
+import bcrypt
 import openpyxl
 import psycopg2
 import datetime
+import smtplib
+import ssl
+import bcrypt
+from flask import jsonify
 from datetime import date
 from flask import Flask, request, redirect, url_for,flash,abort
 from flask import render_template
 from config import get_db_connection
+from config import pg_engine
 from flask import make_response
 from flask import abort
 from flask import Flask
@@ -17,43 +24,279 @@ from werkzeug.utils import secure_filename
 from flask import send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
-from config import pg_engine
 from flask_wtf import FlaskForm
 from wtforms import StringField
 from wtforms.validators import DataRequired
 from flask_migrate import Migrate
-# from flask_login import LoginManager
-# from flask_login import login_user,login_required,logout_user
-# from models import user
-# from forms import LoginForm,RegistrationForm
+from flask_login import LoginManager
+from flask_login import login_user,login_required,logout_user
+from flask_bootstrap import Bootstrap
+from wtforms import SubmitField, SelectField, RadioField, HiddenField, StringField, IntegerField, FloatField
+from wtforms.validators import InputRequired, Length, Regexp, NumberRange
+from datetime import date
+from flask_bcrypt import Bcrypt
 
-attendanceUPLOAD_FOLDER = r"E:\uploads\Attendence_sheet\\"
-
-marksUPLOAD_FOLDER = r"E:\\uploads\\mark_sheets\\"
 
 
-UPLOAD_FOLDER=r"E:\uploads\\"
+
+
+UPLOAD_FOLDER=r"U:\\"
 
 
 ALLOWED_EXTENSIONS = { 'csv','xlsx'}
 
+
+login_manager=LoginManager()
+
 app = Flask(__name__)
+
+# Flask-Bootstrap requires this line
+Bootstrap(app)
+
+bcrypt = Bcrypt(app)
+
 # Set the database URI using the PostgreSQL JDBC driver
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://{user}:{psw}@localhost/{db}".format(user='postgres',psw='Otsi1234',db='school')
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = True
 app.secret_key = 'fneapgfvnoowenvfbijnwgvopbi9wo'
-db=SQLAlchemy(app)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['attendanceUPLOAD_FOLDER'] = attendanceUPLOAD_FOLDER
-app.config['marksUPLOAD_FOLDER'] = marksUPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1000 * 1000
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1000 * 100
+
+db=SQLAlchemy(app)
+
+Migrate(app,db)
+
+login_manager.init_app(app)
+
+login_manager.login_view ='login'
 
 
-# db.init_app(app)
-# Migrate(app,db)
+@login_manager.user_loader
+def load_user(email):
+    return Users.get(email)
 
-# login_manager.init_app(app)
-# login_manager.login_view = 'login'
+@app.route('/',methods=("POST", "GET"))
+def login():
+  return render_template('login_page.html')
+
+@app.route('/loginvalidation',methods=("POST", "GET"))
+def loginvalidation():
+  try:
+    password=request.form['password']
+    email=request.form['email']
+    #hasing password
+    pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')  
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f'''select password_hash from public.users where email='{email}';''')      
+    pw_in_db=cur.fetchall()[0][0]
+    cur.close()
+    conn.close()
+    if bcrypt.check_password_hash(pw_in_db, password):
+      return render_template('send_login_otp .html',email=email)
+    else:
+      return "User name or password missmatch"
+  except Exception as e:
+      return render_template('error_page.html')
+  
+  
+@app.route('/send_login_otp',methods=("POST", "GET"))
+def send_login_otp():
+  #Sending OTP to the registered mail ID
+    email=request.form['email']
+    otp = ''.join([str(random.randint(1, 9)) for _ in range(6)])
+    otp=int(otp)
+    sender = "sampathemandi@gmail.com"
+    password = "trdivqdrtkyrknob"
+        
+    where_to_email = email
+    theme = "Login verification for your account "
+    message = f''' Dear {email.split('@')[0]},
+
+                  As part of our security measures, we have sent you a One-Time Password (OTP) to verify your identity. Please enter the OTP in the appropriate field to complete your login or transaction.
+
+                  Your OTP is: {otp}
+                  
+                  This OTP is valid for a single use only and will expire in 5min. Please do not share this OTP with anyone, including our customer service representatives.
+                  If you did not request this OTP or if you suspect any unauthorized activity on your account, please contact us immediately.
+                  Thank you for choosing our service.
+
+                  Best regards,
+                  Some XYZ company Ltd.'''
+        
+    sender_password = password
+    session = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+    session.login(sender, sender_password)
+    msg = f'''From: {sender}\r\nTo: {where_to_email}\r\nContent-Type: text/plain; charset="utf-8"\r\nSubject: {theme}\r\n\r\n '''
+    msg += message
+    session.sendmail(sender, where_to_email, msg.encode('utf8'))
+    # record the current date and time
+    now = datetime.datetime.now()
+    session.quit()
+    
+    #Recording the OTP into DATABASE
+    conn = get_db_connection()
+    con=pg_engine()
+    cur = conn.cursor()
+    cur.execute(f'''UPDATE public.users    
+              SET otp = {otp},last_login = '{now}'
+              WHERE
+              email='{email}'; ''')    
+    conn.commit()
+    cur.close()
+    conn.close()
+    # return request.form
+    return render_template('validate_login_otp.html',email=email)
+  
+@app.route('/validate_login_otp',methods=("POST", "GET"))
+def validate_login_otp():
+  otp = request.form['otp']
+  email=request.form['email']
+  user=email.split('@')[0]
+  #Recording the OTP into DATABASE
+  conn = get_db_connection()
+  cur = conn.cursor()
+  cur.execute(f'''Select otp from users where email='{email}';''')
+  db_otp=cur.fetchall()[0][0]    
+  conn.commit()
+  cur.close()
+  conn.close()
+  if int(otp) == db_otp:
+    return render_template('Home_page.html',user=user)
+  else:
+    return render_template('error_page.html')
+
+  
+@app.route('/signup',methods=("POST", "GET"))
+def signup():
+    #  return render_template('signup_send_otp.html') 
+  return render_template('signup_page.html')
+
+@app.route('/signuplogin',methods=("POST", "GET"))
+def signuplogin():
+  try:
+      signup_detailes=request.form.to_dict()
+      username=request.form['username']
+      confirm_password=request.form['confirm_password']
+      email=request.form['email']
+      password=request.form['password']
+      #hasing password
+      pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+      # binary_data = bytearray(pw_hash)
+      email=request.form['email']
+      # record the current date and time
+      now = datetime.datetime.now()
+      if confirm_password==password:
+        #DB connection and storing signup data    
+        conn = get_db_connection()
+        con=pg_engine()
+        cur = conn.cursor()
+        cur.execute(f'''INSERT INTO public.users (username, password_hash, email, first_login) VALUES('{signup_detailes.get('username')}','{pw_hash}','{signup_detailes.get('email')}','{now}');''')
+        conn.commit()
+        cur.close()
+        conn.close()
+        return render_template('login_page.html')
+      else: 
+        return render_template('signup_page.html')
+  except Exception as e:
+    error =str(e)
+    # error.split("DETAIL:")[1]
+    return render_template('error_page.html',e=e)
+  # return email
+
+
+@app.route('/forgotpassword',methods=("POST", "GET"))
+def forgotpassword():
+    return render_template('send_otp.html')
+  
+@app.route('/send_otp',methods=("POST", "GET"))
+def send_otp():
+  #Sending OTP to the registered mail ID
+    email=request.form['email']
+    otp = ''.join([str(random.randint(1, 9)) for _ in range(6)])
+    otp=int(otp)
+    sender = "sampathemandi@gmail.com"
+    password = "trdivqdrtkyrknob"
+        
+    where_to_email = email
+    theme = "Reset_password for your account "
+    message = f''' Dear {email.split('@')[0]},
+
+                  As part of our security measures, we have sent you a One-Time Password (OTP) to verify your identity. Please enter the OTP in the appropriate field to complete your login or transaction.
+
+                  Your OTP is: {otp}
+
+                  This OTP is valid for a single use only and will expire in 5min. Please do not share this OTP with anyone, including our customer service representatives.
+
+                  If you did not request this OTP or if you suspect any unauthorized activity on your account, please contact us immediately.
+
+                  Thank you for choosing our service.
+
+                  Best regards,
+
+                  Some XYZ company Ltd.'''
+        
+    sender_password = password
+    session = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+    session.login(sender, sender_password)
+    msg = f'''From: {sender}\r\nTo: {where_to_email}\r\nContent-Type: text/plain; charset="utf-8"\r\nSubject: {theme}\r\n\r\n '''
+    msg += message
+    session.sendmail(sender, where_to_email, msg.encode('utf8'))
+    # record the current date and time
+    now = datetime.datetime.now()
+    session.quit()
+    #Recording the OTP into DATABASE
+    conn = get_db_connection()
+    con=pg_engine()
+    cur = conn.cursor()
+    cur.execute(f'''UPDATE public.users    
+              SET otp = {otp},pw_updated_time = '{now}'
+              WHERE
+              email='{email}'; ''')    
+    conn.commit()
+    cur.close()
+    conn.close()
+    # return request.form
+    return render_template('validate_otp.html',email=email)
+
+@app.route('/validateotp',methods=("POST", "GET"))
+def validateotp():
+  otp = request.form['otp']
+  email=request.form['email']
+  #Recording the OTP into DATABASE
+  conn = get_db_connection()
+  cur = conn.cursor()
+  cur.execute(f'''Select otp from users where email='{email}';''')
+  db_otp=cur.fetchall()[0][0]    
+  cur.close()
+  conn.close()
+  if int(otp) == db_otp:
+    return render_template('changepassword.html',email=email)
+  else:
+    return render_template('error_page.html')
+
+@app.route('/changepassword',methods=("POST", "GET"))
+def changepassword():
+  re_enterpw=request.form['re_enter_password']
+  new_pw = request.form['new_password']
+  email=request.form['email']
+  if re_enterpw == new_pw:
+    # hasing password
+    pw_hash = bcrypt.generate_password_hash(new_pw).decode('utf-8')
+    #Recording the OTP into DATABASE
+    # record the current date and time
+    now = datetime.datetime.now()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f'''UPDATE public.users    
+                SET password_hash ='{pw_hash}',pw_updated_time = '{now}'
+                WHERE
+                email='{email}';''') 
+    conn.commit()
+    cur.close()
+    conn.close()
+    return render_template('login_page.html')
+    # return request.form
 
 
 @app.route('/home')
